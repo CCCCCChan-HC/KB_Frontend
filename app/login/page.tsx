@@ -53,9 +53,27 @@ export default function LoginPage() {
                 case 'signin_error':
                     setError('登录过程中发生错误')
                     break
+                // NextAuth 默认错误类型
+                case 'CredentialsSignin':
+                    setError('用户名或密码错误，请重试')
+                    break
+                case 'SessionRequired':
+                    setError('需要登录才能访问，请先登录')
+                    break
+                case 'AccessDenied':
+                    setError('访问被拒绝，请检查您的权限')
+                    break
+                case 'Verification':
+                    setError('验证失败，请重新登录')
+                    break
+                case 'Configuration':
+                    setError('系统配置错误，请联系管理员')
+                    break
                 default:
-                    setError('登录过程中发生未知错误')
+                    setError(`登录过程中发生错误: ${errorParam}`)
             }
+            // 清除URL中的错误参数，避免刷新页面时重复显示
+            window.history.replaceState({}, '', '/login')
         }
     }, [searchParams])
 

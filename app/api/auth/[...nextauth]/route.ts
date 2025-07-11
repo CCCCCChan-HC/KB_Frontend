@@ -128,7 +128,8 @@ export const authOptions: NextAuthOptions = {
         }
     },
     pages: {
-        signIn: '/login' // 自定义登录页
+        signIn: '/login', // 自定义登录页
+        error: '/login' // 自定义错误页面，重定向到登录页
     },
     // 增强安全配置
     session: {
