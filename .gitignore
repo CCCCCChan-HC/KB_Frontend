@@ -49,6 +49,3 @@ yarn.lock
 
 # pmpm
 pnpm-lock.yaml
-
-# local .env files
-.env.local
