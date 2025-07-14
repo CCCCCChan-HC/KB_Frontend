@@ -7,25 +7,214 @@ import {
   SecurityEventType 
 } from '@/utils/logger'
 
+// CAS ticket验证函数
+async function validateCASTicket(ticket: string, clientIP: string, userAgent: string) {
+    try {
+        // 验证票据格式
+        const ticketPattern = /^ST-[A-Za-z0-9\-_]+$/
+        if (!ticket || ticket.length < 10 || ticket.length > 256 || !ticketPattern.test(ticket)) {
+            logger.warn('[NextAuth] Invalid CAS ticket format', {
+                ticketPrefix: ticket?.substring(0, 10) + '...',
+                clientIP,
+                userAgent
+            })
+            return null
+        }
+
+        // 检查必要的环境变量
+        const casServerUrl = process.env.CAS_BASE_URL
+        const casServiceUrl = process.env.CAS_SERVICE_URL
+        
+        if (!casServerUrl || !casServiceUrl) {
+            logger.error('[NextAuth] Missing CAS environment variables', {
+                casServerUrl: !!casServerUrl,
+                casServiceUrl: !!casServiceUrl
+            })
+            return null
+        }
+
+        logger.info('[NextAuth] Validating CAS ticket', {
+            ticketPrefix: ticket.substring(0, 10) + '...',
+            clientIP,
+            userAgent
+        })
+
+        // 验证CAS票据
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 10000) // 10秒超时
+        
+        const response = await fetch(`${casServerUrl}/serviceValidate?ticket=${encodeURIComponent(ticket)}&service=${encodeURIComponent(casServiceUrl)}`, {
+            method: 'GET',
+            headers: {
+                'User-Agent': 'KB-Frontend-NextAuth-CAS/1.0',
+                'Accept': 'application/xml, text/xml',
+                'Cache-Control': 'no-cache'
+            },
+            signal: controller.signal
+        })
+        
+        clearTimeout(timeoutId)
+        
+        if (!response.ok) {
+            logger.error('[NextAuth] CAS server error', {
+                status: response.status,
+                ticketPrefix: ticket.substring(0, 10) + '...'
+            })
+            return null
+        }
+        
+        const xmlText = await response.text()
+        
+        // 解析XML响应
+        const successMatch = xmlText.match(/<cas:authenticationSuccess[^>]*>([\s\S]*?)<\/cas:authenticationSuccess>|<authenticationSuccess[^>]*>([\s\S]*?)<\/authenticationSuccess>/)
+        const failureMatch = xmlText.match(/<cas:authenticationFailure[^>]*code="([^"]*)">[\s\S]*?<\/cas:authenticationFailure>|<authenticationFailure[^>]*code="([^"]*)">[\s\S]*?<\/authenticationFailure>/)
+        
+        if (successMatch) {
+            const successContent = successMatch[1] || successMatch[2]
+            const userMatch = successContent.match(/<cas:user>([^<]+)<\/cas:user>|<user>([^<]+)<\/user>/)
+            const username = (userMatch?.[1] || userMatch?.[2])?.trim()
+            
+            if (!username) {
+                logger.error('[NextAuth] No username in CAS response', {
+                    ticketPrefix: ticket.substring(0, 10) + '...'
+                })
+                return null
+            }
+            
+            // 验证用户名格式
+            const usernameValidation = validateUsername(username)
+            if (!usernameValidation.valid) {
+                logger.warn('[NextAuth] CAS username validation failed', {
+                    username,
+                    reason: usernameValidation.reason
+                })
+                
+                logSecurity({
+                    type: SecurityEventType.LOGIN_FAILURE,
+                    severity: 'MEDIUM',
+                    description: `CAS login with invalid username format: ${usernameValidation.reason}`,
+                    ip: clientIP,
+                    userAgent,
+                    userId: username,
+                    additionalData: { 
+                        reason: 'cas_invalid_username_format',
+                        validationError: usernameValidation.reason
+                    }
+                })
+                
+                return null
+            }
+            
+            logger.info('[NextAuth] CAS authentication successful', {
+                username,
+                clientIP,
+                userAgent
+            })
+            
+            logSecurity({
+                type: SecurityEventType.LOGIN_SUCCESS,
+                severity: 'LOW',
+                description: `User ${username} successfully authenticated via CAS`,
+                ip: clientIP,
+                userAgent,
+                userId: username,
+                additionalData: { authMethod: 'cas' }
+            })
+            
+            return {
+                id: username,
+                name: username,
+                email: `${username}@example.com`
+            }
+            
+        } else if (failureMatch) {
+            const failureCode = failureMatch[1] || failureMatch[2] || 'UNKNOWN'
+            logger.warn('[NextAuth] CAS authentication failed', {
+                code: failureCode,
+                ticketPrefix: ticket.substring(0, 10) + '...'
+            })
+            
+            logSecurity({
+                type: SecurityEventType.LOGIN_FAILURE,
+                severity: 'MEDIUM',
+                description: `CAS authentication failed: ${failureCode}`,
+                ip: clientIP,
+                userAgent,
+                additionalData: { 
+                    reason: 'cas_auth_failed',
+                    casErrorCode: failureCode
+                }
+            })
+            
+            return null
+        } else {
+            logger.error('[NextAuth] Invalid CAS response format', {
+                xmlLength: xmlText.length,
+                ticketPrefix: ticket.substring(0, 10) + '...'
+            })
+            return null
+        }
+        
+    } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+            logger.error('[NextAuth] CAS server timeout', {
+                ticketPrefix: ticket.substring(0, 10) + '...'
+            })
+        } else {
+            logger.error('[NextAuth] CAS validation error', {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                ticketPrefix: ticket.substring(0, 10) + '...'
+            })
+        }
+        
+        logSecurity({
+            type: SecurityEventType.LOGIN_FAILURE,
+            severity: 'HIGH',
+            description: `CAS validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            ip: clientIP,
+            userAgent,
+            additionalData: { 
+                reason: 'cas_validation_error',
+                error: error instanceof Error ? error.message : 'Unknown error'
+            }
+        })
+        
+        return null
+    }
+}
+
 export const authOptions: NextAuthOptions = {
     providers: [
         CredentialsProvider({
-            name: 'Credentials',
+            name: "credentials",
             credentials: {
-                username: { label: "Username", type: "text" }
+                username: { label: "Username", type: "text" },
+                ticket: { label: "CAS Ticket", type: "text" },
+                state: { label: "State", type: "text" },
+                timestamp: { label: "Timestamp", type: "text" }
             },
             async authorize(credentials, req) {
                 try {
+                    const clientIP = req?.headers?.['x-forwarded-for'] as string || req?.headers?.['x-real-ip'] as string || 'unknown'
+                    const userAgent = req?.headers?.['user-agent'] as string || 'unknown'
+                    
+                    // 检查是否提供了CAS ticket
+                    if (credentials?.ticket) {
+                        // CAS ticket验证流程
+                        return await validateCASTicket(credentials.ticket, clientIP, userAgent)
+                    }
+                    
+                    // 原有的用户名验证流程（保持向后兼容）
                     if (!credentials?.username) {
-                        logger.warn('[NextAuth] No username provided in credentials')
+                        logger.warn('[NextAuth] No username or ticket provided in credentials')
                         
                         logSecurity({
                             type: SecurityEventType.LOGIN_FAILURE,
                             severity: 'LOW',
-                            description: 'Login attempt without username',
-                            ip: req?.headers?.['x-forwarded-for'] as string || req?.headers?.['x-real-ip'] as string,
-                            userAgent: req?.headers?.['user-agent'] as string,
-                            additionalData: { reason: 'missing_username' }
+                            description: 'Login attempt without username or ticket',
+                            ip: clientIP,
+                            userAgent,
+                            additionalData: { reason: 'missing_credentials' }
                         })
                         
                         return null
@@ -43,8 +232,8 @@ export const authOptions: NextAuthOptions = {
                             type: SecurityEventType.LOGIN_FAILURE,
                             severity: 'MEDIUM',
                             description: `Login attempt with invalid username format: ${usernameValidation.reason}`,
-                            ip: req?.headers?.['x-forwarded-for'] as string || req?.headers?.['x-real-ip'] as string,
-                            userAgent: req?.headers?.['user-agent'] as string,
+                            ip: clientIP,
+                            userAgent,
                             userId: credentials.username,
                             additionalData: { 
                                 reason: 'invalid_username_format',
@@ -63,8 +252,8 @@ export const authOptions: NextAuthOptions = {
                         type: SecurityEventType.LOGIN_SUCCESS,
                         severity: 'LOW',
                         description: `User ${credentials.username} successfully authenticated`,
-                        ip: req?.headers?.['x-forwarded-for'] as string || req?.headers?.['x-real-ip'] as string,
-                        userAgent: req?.headers?.['user-agent'] as string,
+                        ip: clientIP,
+                        userAgent,
                         userId: credentials.username,
                         additionalData: { authMethod: 'credentials' }
                     })
@@ -76,20 +265,22 @@ export const authOptions: NextAuthOptions = {
                     }
                 } catch (error) {
                     logger.error('[NextAuth] Authentication error', {
-            errorMessage: error instanceof Error ? error.message : 'Unknown auth error',
-            username: credentials?.username
-          })
+                        errorMessage: error instanceof Error ? error.message : 'Unknown auth error',
+                        username: credentials?.username,
+                        hasTicket: !!credentials?.ticket
+                    })
                     
                     logSecurity({
                         type: SecurityEventType.LOGIN_FAILURE,
                         severity: 'HIGH',
                         description: `Authentication system error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                        ip: req?.headers?.['x-forwarded-for'] as string || req?.headers?.['x-real-ip'] as string,
-                        userAgent: req?.headers?.['user-agent'] as string,
+                        ip: req?.headers?.['x-forwarded-for'] as string || req?.headers?.['x-real-ip'] as string || 'unknown',
+                        userAgent: req?.headers?.['user-agent'] as string || 'unknown',
                         userId: credentials?.username,
                         additionalData: { 
                             reason: 'system_error',
-                            error: error instanceof Error ? error.message : 'Unknown error'
+                            error: error instanceof Error ? error.message : 'Unknown error',
+                            hasTicket: !!credentials?.ticket
                         }
                     })
                 }

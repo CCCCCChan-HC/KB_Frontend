@@ -77,76 +77,73 @@ export default function LoginPage() {
         }
     }, [searchParams])
 
-    // 检查CAS登录成功的参数
+    // 处理CAS登录回调
     useEffect(() => {
-        const casUser = searchParams.get('cas_user')
-        const casLogin = searchParams.get('cas_login')
-        const state = searchParams.get('state')
-        const timestamp = searchParams.get('timestamp')
-
-        if (casLogin === 'success' && casUser && state && timestamp) {
-            console.log('Processing CAS login callback...')
-
-            // 防止重复处理
-            if (isProcessing) {
-                return
-            }
-
-            // 验证时间戳（防止重放攻击）
-            if (!validateTimestamp(timestamp, 5 * 60 * 1000)) { // 5分钟有效期
-                console.error('CAS login request expired or invalid timestamp')
-                setError('登录请求已过期，请重新登录')
-                // 清除URL参数
-                window.history.replaceState({}, '', '/login?error=expired')
-                return
-            }
-
-            // 验证用户名格式
-            if (!validateUsername(casUser)) {
-                console.error('Invalid username format from CAS:', casUser)
-                setError('用户名格式无效')
-                window.history.replaceState({}, '', '/login?error=invalid')
-                return
-            }
-
-            // 验证状态参数（基本检查）
-            if (state.length < 16) {
-                console.error('Invalid state parameter')
-                setError('安全验证失败，请重新登录')
-                window.history.replaceState({}, '', '/login?error=invalid')
-                return
-            }
-
-            console.log('CAS login validation passed, signing in user:', casUser)
-            setIsProcessing(true)
-            setError(null)
-
-            // 使用NextAuth的credentials provider登录
-            signIn('credentials', {
-                username: casUser,
-                callbackUrl: '/',
-                redirect: false // 改为手动处理重定向
-            }).then((result) => {
-                console.log('NextAuth signIn result:', result)
-                if (result?.ok) {
-                    // 清除URL参数
-                    window.history.replaceState({}, '', '/login')
-                    console.log('Login successful, redirecting to home page')
-                    router.push('/')
-                } else {
-                    console.error('NextAuth signIn failed:', result?.error)
-                    setError('登录失败：' + (result?.error || '未知错误'))
-                    window.history.replaceState({}, '', '/login?error=signin_failed')
+        const handleCasCallback = async () => {
+            const urlParams = new URLSearchParams(window.location.search)
+            const ticket = urlParams.get('ticket')
+            
+            if (ticket) {
+                console.log('Processing CAS login callback...')
+                
+                // 防止重复处理
+                if (isProcessing) {
+                    return
                 }
-            }).catch((error) => {
-                console.error('NextAuth signIn error:', error)
-                setError('登录过程中发生错误：' + error.message)
-                window.history.replaceState({}, '', '/login?error=signin_error')
-            }).finally(() => {
-                setIsProcessing(false)
-            })
+                
+                setIsProcessing(true)
+                setError(null)
+                
+                // 立即清理URL参数，防止错误处理useEffect捕获到CredentialsSignin
+                window.history.replaceState({}, '', '/login')
+                
+                try {
+                    // 从sessionStorage获取状态参数和时间戳
+                    const state = sessionStorage.getItem('cas_state')
+                    const timestamp = sessionStorage.getItem('cas_timestamp')
+                    
+                    if (!state || !timestamp) {
+                        throw new Error('登录状态丢失，请重新登录')
+                    }
+                    
+                    // 验证时间戳（5分钟有效期）
+                    const timestampNum = parseInt(timestamp)
+                    const now = Date.now()
+                    if (now - timestampNum > 5 * 60 * 1000) {
+                        throw new Error('登录链接已过期，请重新登录')
+                    }
+                    
+                    // 清理sessionStorage
+                    sessionStorage.removeItem('cas_state')
+                    sessionStorage.removeItem('cas_timestamp')
+                    sessionStorage.removeItem('cas_login_time')
+                    
+                    // 直接使用NextAuth进行CAS登录，传递ticket
+                    const result = await signIn('credentials', {
+                        ticket: ticket,
+                        state: state,
+                        timestamp: timestamp,
+                        redirect: false
+                    })
+                    
+                    if (result?.ok) {
+                        // 登录成功，重定向到主页
+                        console.log('Login successful, redirecting to home page')
+                        router.push('/')
+                    } else {
+                        throw new Error(result?.error || '身份验证失败')
+                    }
+                } catch (err) {
+                    console.error('CAS登录失败:', err)
+                    setError(err instanceof Error ? err.message : '登录失败，请重试')
+                } finally {
+                    setIsProcessing(false)
+                }
+            }
         }
-    }, [searchParams, router, isProcessing])
+        
+        handleCasCallback()
+    }, [router, isProcessing])
 
     // 处理CAS登录
     const handleCasLogin = () => {
@@ -180,6 +177,9 @@ export default function LoginPage() {
             sessionStorage.setItem('cas_login_time', Date.now().toString())
 
             // 构建CAS登录URL
+            const timestamp = Date.now().toString()
+            // 将状态参数和时间戳存储到sessionStorage，CAS重定向时会保留
+            sessionStorage.setItem('cas_timestamp', timestamp)
             const serviceUrl = encodeURIComponent(casServiceUrl)
             const casUrl = `${casBaseUrl}/login?service=${serviceUrl}`
 

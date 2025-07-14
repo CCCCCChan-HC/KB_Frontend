@@ -128,7 +128,7 @@ export default withAuth(
     }
     
     // 记录敏感路径访问
-    if (pathname.startsWith('/api/cas/') || pathname.startsWith('/api/auth/')) {
+    if (pathname.startsWith('/api/auth/')) {
       logger.info('[Middleware] Sensitive API access', {
         ip: clientIP,
         path: pathname,
@@ -144,10 +144,9 @@ export default withAuth(
       authorized: ({ token, req }) => {
         const pathname = req.nextUrl.pathname
         
-        // 允许访问登录页面、API认证路由和CAS相关路由
+        // 允许访问登录页面和API认证路由
         if (pathname.startsWith('/login') ||
-            pathname.startsWith('/api/auth') ||
-            pathname.startsWith('/api/cas')) {
+            pathname.startsWith('/api/auth')) {
           return true
         }
         
