@@ -223,10 +223,27 @@ const Main: FC<IMainProps> = () => {
   // init
   useEffect(() => {
     if (!hasSetAppConfig) {
-      setAppUnavailable(true)
+      // 运行时拉取配置以支持docker挂载.env.local
+      fetch('/api/config').then(async (res) => {
+        if (!res.ok) throw new Error('Failed to load runtime config')
+        const cfg = await res.json()
+          // 将运行时配置注入到全局，以便当前页面无需重新构建即可使用
+          ; (window as any).__RUNTIME_CONFIG__ = cfg
+        if (!cfg.APP_ID || !cfg.API_KEY) {
+          setAppUnavailable(true)
+          return
+        }
+        // 继续初始化逻辑
+        bootstrap()
+      }).catch(() => {
+        setAppUnavailable(true)
+      })
       return
     }
-    (async () => {
+
+    bootstrap()
+
+    async function bootstrap() {
       try {
         const [conversationData, appParams] = await Promise.all([fetchConversations(), fetchAppParams()])
         // handle current conversation id
@@ -280,7 +297,7 @@ const Main: FC<IMainProps> = () => {
           setAppUnavailable(true)
         }
       }
-    })()
+    }
   }, [])
 
   const [isResponding, { setTrue: setRespondingTrue, setFalse: setRespondingFalse }] = useBoolean(false)

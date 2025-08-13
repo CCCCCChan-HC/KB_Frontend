@@ -1,7 +1,26 @@
 import type { AppInfo } from '@/types/app'
-export const APP_ID = `${process.env.NEXT_PUBLIC_APP_ID}`
-export const API_KEY = `${process.env.NEXT_PUBLIC_APP_KEY}`
-export const API_URL = `${process.env.NEXT_PUBLIC_API_URL}`
+
+// 运行时配置获取函数
+const getRuntimeConfig = () => {
+  if (typeof window !== 'undefined' && (window as any).__RUNTIME_CONFIG__) {
+    return (window as any).__RUNTIME_CONFIG__
+  }
+  return null
+}
+
+// 获取配置值的函数，优先使用运行时配置
+const getConfigValue = (envKey: string, runtimeKey: string) => {
+  const runtime = getRuntimeConfig()
+  if (runtime && runtime[runtimeKey]) {
+    return runtime[runtimeKey]
+  }
+  return process.env[envKey] || ''
+}
+
+export const APP_ID = getConfigValue('NEXT_PUBLIC_APP_ID', 'APP_ID')
+export const API_KEY = getConfigValue('NEXT_PUBLIC_APP_KEY', 'API_KEY')
+export const API_URL = getConfigValue('NEXT_PUBLIC_API_URL', 'API_URL')
+
 export const APP_INFO: AppInfo = {
   title: 'Chat APP',
   description: '',
