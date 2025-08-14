@@ -1,5 +1,6 @@
 import { getLocaleOnServer } from '@/i18n/server'
 import AuthProvider from '@/app/components/base/auth-provider'
+import { PublicEnvScript } from 'next-runtime-env'
 
 import './styles/globals.css'
 import './styles/markdown.scss'
@@ -12,6 +13,9 @@ const LocaleLayout = ({
   const locale = getLocaleOnServer()
   return (
     <html lang={locale ?? 'en'} className="h-full">
+      <head>
+        <PublicEnvScript />
+      </head>
       <body className="h-full">
         <AuthProvider>
           <div className="overflow-x-auto">

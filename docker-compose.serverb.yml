@@ -1,0 +1,81 @@
+services:
+  kb-frontend:
+    # 使用预构建的镜像而不是构建
+    image: kb-frontend:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    # 添加调试命令来确认环境变量获取，同时保持证书生成功能
+    command: >
+      sh -c '
+        echo "=== 环境变量调试信息 ===";
+        echo "NEXT_PUBLIC_APP_ID: $$NEXT_PUBLIC_APP_ID";
+        echo "NEXT_PUBLIC_APP_KEY: $$NEXT_PUBLIC_APP_KEY";
+        echo "NEXT_PUBLIC_API_URL: $$NEXT_PUBLIC_API_URL";
+        echo "NEXT_PUBLIC_CAS_BASE_URL: $$NEXT_PUBLIC_CAS_BASE_URL";
+        echo "NEXT_PUBLIC_CAS_SERVICE_URL: $$NEXT_PUBLIC_CAS_SERVICE_URL";
+        echo "CAS_BASE_URL: $$CAS_BASE_URL";
+        echo "CAS_SERVICE_URL: $$CAS_SERVICE_URL";
+        echo "NEXTAUTH_URL: $$NEXTAUTH_URL";
+        echo "NEXT_PUBLIC_NEXTAUTH_URL: $$NEXT_PUBLIC_NEXTAUTH_URL";
+        echo "HTTPS: $$HTTPS";
+        echo "SSL_DOMAIN: $$SSL_DOMAIN";
+        echo "=== 检查.env.local文件 ===";
+        if [ -f "/app/.env.local" ]; then
+          echo ".env.local文件存在，内容如下:";
+          cat /app/.env.local;
+        else
+          echo ".env.local文件不存在";
+        fi;
+        echo "=== 证书检查和生成 ===";
+        if [ "$$HTTPS" = "true" ]; then
+          echo "HTTPS模式启用，检查证书...";
+          /app/scripts/generate-certs.sh;
+        else
+          echo "HTTP模式，跳过证书生成";
+        fi;
+        echo "=== 启动应用 ===";
+        node server.js
+      '
+    environment:
+      # 只保留不在.env.local中的默认配置
+      - PORT=3000
+      - SSL_CERT_FILE=/app/certs/server.crt
+      - SSL_KEY_FILE=/app/certs/server.key
+      
+    volumes:
+      # 挂载.env.local文件，实现运行时配置更新
+      - ./.env.local:/app/.env.local:ro
+      
+      # 可选：挂载自定义TLS证书（如果不挂载将自动生成自签证书）
+      # - ./certs/server.crt:/app/certs/server.crt:ro
+      # - ./certs/server.key:/app/certs/server.key:ro
+      
+      # 可选：持久化日志
+      # - ./logs:/app/logs
+      
+    restart: unless-stopped
+    
+    # 健康检查：使用无需鉴权的 NextAuth 会话接口
+    # healthcheck:
+    #   test: ["CMD", "curl", "-sS", "-f", "-k", "--connect-timeout", "2", "--max-time", "5", "https://localhost:3000/api/auth/session"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
+
+# 可选：添加nginx反向代理支持HTTPS终止
+# 取消注释以下部分如果您希望nginx处理TLS
+# 
+#   nginx:
+#     image: nginx:alpine
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#     volumes:
+#       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+#       - ./certs:/etc/nginx/certs:ro
+#     depends_on:
+#       - kb-frontend
+#     restart: unless-stopped

@@ -41,13 +41,13 @@ services:
       
     restart: unless-stopped
     
-    # 健康检查
-    healthcheck:
-      test: ["CMD", "curl", "-f", "-k", "https://localhost:3000/api/config"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    # 健康检查（临时移除）
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "-k", "https://localhost:3000/api/config"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
 
 # 可选：添加nginx反向代理支持HTTPS终止
 # 取消注释以下部分如果您希望nginx处理TLS

@@ -6,6 +6,7 @@ import {
   logSecurity, 
   SecurityEventType 
 } from '@/utils/logger'
+import { getServerCasBaseUrl, getServerCasServiceUrl, getNodeEnv } from '@/utils/env'
 
 // CAS ticket验证函数
 async function validateCASTicket(ticket: string, clientIP: string, userAgent: string) {
@@ -22,8 +23,8 @@ async function validateCASTicket(ticket: string, clientIP: string, userAgent: st
         }
 
         // 检查必要的环境变量
-        const casServerUrl = process.env.CAS_BASE_URL
-        const casServiceUrl = process.env.CAS_SERVICE_URL
+        const casServerUrl = getServerCasBaseUrl()
+        const casServiceUrl = getServerCasServiceUrl()
         
         if (!casServerUrl || !casServiceUrl) {
             logger.error('[NextAuth] Missing CAS environment variables', {
@@ -335,7 +336,7 @@ export const authOptions: NextAuthOptions = {
                 httpOnly: true,
                 sameSite: 'lax',
                 path: '/',
-                secure: process.env.NODE_ENV === 'production'
+                secure: getNodeEnv() === 'production'
             }
         },
         csrfToken: {
@@ -344,12 +345,12 @@ export const authOptions: NextAuthOptions = {
                 httpOnly: true,
                 sameSite: 'lax',
                 path: '/',
-                secure: process.env.NODE_ENV === 'production'
+                secure: getNodeEnv() === 'production'
             }
         }
     },
     // 启用调试模式（开发环境）
-    debug: process.env.NODE_ENV === 'development',
+    debug: getNodeEnv() === 'development',
     // 安全事件处理
     events: {
         async signIn({ user, account, profile }) {

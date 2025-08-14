@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { signIn, getCsrfToken, useSession } from 'next-auth/react'
 import { validateUsername, validateTimestamp, generateSecureState } from '@/utils/csrf'
+import { env } from 'next-runtime-env'
 
 export default function LoginPage() {
     const searchParams = useSearchParams()
@@ -15,14 +16,14 @@ export default function LoginPage() {
     // 检查用户是否已登录，如果已登录则重定向到主页
     useEffect(() => {
         console.log('[Login Page] Session status:', status, 'Session:', session)
-        console.log('[Login Page] NEXTAUTH_URL:', process.env.NEXT_PUBLIC_NEXTAUTH_URL)
+        console.log('[Login Page] NEXTAUTH_URL:', env('NEXT_PUBLIC_NEXTAUTH_URL'))
         console.log('[Login Page] Current URL:', window.location.href)
-        
+
         if (status === 'authenticated' && session) {
             console.log('User already authenticated, redirecting to home page')
             console.log('Session user:', session.user)
-            // 使用 window.location.href 强制重定向
-            window.location.href = '/'
+            // 使用 router.replace 避免无限循环
+            router.replace('/')
         }
     }, [status, session, router])
 
@@ -82,42 +83,42 @@ export default function LoginPage() {
         const handleCasCallback = async () => {
             const urlParams = new URLSearchParams(window.location.search)
             const ticket = urlParams.get('ticket')
-            
+
             if (ticket) {
                 console.log('Processing CAS login callback...')
-                
+
                 // 防止重复处理
                 if (isProcessing) {
                     return
                 }
-                
+
                 setIsProcessing(true)
                 setError(null)
-                
+
                 // 立即清理URL参数，防止错误处理useEffect捕获到CredentialsSignin
                 window.history.replaceState({}, '', '/login')
-                
+
                 try {
                     // 从sessionStorage获取状态参数和时间戳
                     const state = sessionStorage.getItem('cas_state')
                     const timestamp = sessionStorage.getItem('cas_timestamp')
-                    
+
                     if (!state || !timestamp) {
                         throw new Error('登录状态丢失，请重新登录')
                     }
-                    
+
                     // 验证时间戳（5分钟有效期）
                     const timestampNum = parseInt(timestamp)
                     const now = Date.now()
                     if (now - timestampNum > 5 * 60 * 1000) {
                         throw new Error('登录链接已过期，请重新登录')
                     }
-                    
+
                     // 清理sessionStorage
                     sessionStorage.removeItem('cas_state')
                     sessionStorage.removeItem('cas_timestamp')
                     sessionStorage.removeItem('cas_login_time')
-                    
+
                     // 直接使用NextAuth进行CAS登录，传递ticket
                     const result = await signIn('credentials', {
                         ticket: ticket,
@@ -125,7 +126,7 @@ export default function LoginPage() {
                         timestamp: timestamp,
                         redirect: false
                     })
-                    
+
                     if (result?.ok) {
                         // 登录成功，重定向到主页
                         console.log('Login successful, redirecting to home page')
@@ -141,7 +142,7 @@ export default function LoginPage() {
                 }
             }
         }
-        
+
         handleCasCallback()
     }, [router, isProcessing])
 
@@ -158,8 +159,8 @@ export default function LoginPage() {
         }
 
         // 获取客户端环境变量
-        const casBaseUrl = process.env.NEXT_PUBLIC_CAS_BASE_URL
-        const casServiceUrl = process.env.NEXT_PUBLIC_CAS_SERVICE_URL
+        const casBaseUrl = env('NEXT_PUBLIC_CAS_BASE_URL')
+        const casServiceUrl = env('NEXT_PUBLIC_CAS_SERVICE_URL')
 
         // 检查环境变量是否设置
         if (!casBaseUrl || !casServiceUrl) {
@@ -180,12 +181,12 @@ export default function LoginPage() {
             const timestamp = Date.now().toString()
             // 将状态参数和时间戳存储到sessionStorage，CAS重定向时会保留
             sessionStorage.setItem('cas_timestamp', timestamp)
-            const serviceUrl = encodeURIComponent(casServiceUrl)
+            const serviceUrl = encodeURIComponent(casServiceUrl as string)
             const casUrl = `${casBaseUrl}/login?service=${serviceUrl}`
 
             console.log('Redirecting to CAS login:', casUrl)
             setError(null)
-            window.location.href = casUrl
+            window.location.href = casUrl as string
             console.log('', window.location.href)
         } catch (error: any) {
             console.error('Error preparing CAS login:', error)
@@ -242,8 +243,8 @@ export default function LoginPage() {
                     onClick={handleCasLogin}
                     disabled={isProcessing || !csrfToken}
                     className={`w-full py-3 px-4 rounded-md transition-all duration-200 font-medium ${isProcessing || !csrfToken
-                            ? 'bg-gray-400 cursor-not-allowed text-gray-200'
-                            : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-md hover:shadow-lg'
+                        ? 'bg-gray-400 cursor-not-allowed text-gray-200'
+                        : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-md hover:shadow-lg'
                         }`}
                 >
                     {isProcessing ? (
