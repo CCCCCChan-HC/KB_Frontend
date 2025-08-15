@@ -10,22 +10,22 @@ services:
       - NEXT_PUBLIC_APP_ID=${NEXT_PUBLIC_APP_ID:-}
       - NEXT_PUBLIC_APP_KEY=${NEXT_PUBLIC_APP_KEY:-}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
-      - NEXT_PUBLIC_CAS_BASE_URL=${NEXT_PUBLIC_CAS_BASE_URL:-}
-      - NEXT_PUBLIC_CAS_SERVICE_URL=${NEXT_PUBLIC_CAS_SERVICE_URL:-}
+      - NEXT_PUBLIC_CAS_BASE_URL=${NEXT_PUBLIC_CAS_BASE_URL:-http://192.168.50.178:8443/cas}
+      - NEXT_PUBLIC_CAS_SERVICE_URL=${NEXT_PUBLIC_CAS_SERVICE_URL:-http://192.168.50.70:3000/login}
       
       # CAS服务器端配置
-      - CAS_BASE_URL=${CAS_BASE_URL:-}
-      - CAS_SERVICE_URL=${CAS_SERVICE_URL:-}
+      - CAS_BASE_URL=${CAS_BASE_URL:-http://192.168.50.178:8443/cas}
+      - CAS_SERVICE_URL=${CAS_SERVICE_URL:-http://192.168.50.70:3000/login}
       
       # NextAuth配置
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://192.168.50.70:3000}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production}
       
       # 环境设置
-      - NODE_ENV=${NODE_ENV:-production}
+      - NODE_ENV=${NODE_ENV:-development}
       
       # HTTPS设置 - 设置为true启用HTTPS和自签证书
-      - HTTPS=${HTTPS:-true}
+      - HTTPS=${HTTPS:-false}
       - SSL_DOMAIN=${SSL_DOMAIN:-localhost}
       
     volumes:
@@ -43,7 +43,7 @@ services:
     
     # 健康检查
     healthcheck:
-      test: ["CMD", "curl", "-f", "-k", "https://localhost:3000/api/config"]
+      test: ["CMD", "curl", "-f", "-k", "http://localhost:3000/api/config"]
       interval: 30s
       timeout: 10s
       retries: 3

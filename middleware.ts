@@ -1,10 +1,10 @@
 import { withAuth } from "next-auth/middleware"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { 
-  logger, 
-  logSecurity, 
-  SecurityEventType 
+import {
+  logger,
+  logSecurity,
+  SecurityEventType
 } from '@/utils/logger'
 
 // 需要CSRF保护的路径
@@ -17,26 +17,31 @@ const CSRF_PROTECTED_PATHS = [
 export default withAuth(
   function middleware(request: NextRequest) {
     const response = NextResponse.next()
-    const clientIP = getClientIP(request)
-    const userAgent = request.headers.get('user-agent') || 'unknown'
+    // const clientIP = getClientIP(request)
+    // const userAgent = request.headers.get('user-agent') || 'unknown'
     const pathname = request.nextUrl.pathname
-    const method = request.method
-    
+    // const method = request.method
+
     // 添加安全响应头
     const securityHeaders = getSecurityHeaders()
     Object.entries(securityHeaders).forEach(([key, value]) => {
       response.headers.set(key, value)
     })
-    
-    // 速率限制检查
-    if (!checkRateLimit(clientIP)) {
+
+    /*
+    // 速率限制检查（为认证相关路径提供更宽松的限制）
+    const isAuthPath = pathname.startsWith('/login') || pathname.startsWith('/api/auth')
+    const rateLimit = isAuthPath ? 200 : 100  // 认证路径允许更多请求
+
+    if (!checkRateLimit(clientIP, rateLimit)) {
       logger.warn('[Middleware] Rate limit exceeded', {
         ip: clientIP,
         path: pathname,
         method,
-        userAgent
+        userAgent,
+        isAuthPath
       })
-      
+
       logSecurity({
         type: SecurityEventType.RATE_LIMIT_EXCEEDED,
         severity: 'MEDIUM',
@@ -46,17 +51,18 @@ export default withAuth(
         additionalData: {
           path: pathname,
           method,
-          limit: 100,
-          window: '15 minutes'
+          limit: rateLimit,
+          window: '15 minutes',
+          isAuthPath
         }
       })
-      
-      return new NextResponse('Too Many Requests', { 
+
+      return new NextResponse('Too Many Requests', {
         status: 429,
         headers: securityHeaders
       })
     }
-    
+
     // CSRF保护
     if (shouldCheckCSRF(request)) {
       if (!validateCSRFToken(request)) {
@@ -68,7 +74,7 @@ export default withAuth(
           hasHeaderToken: !!request.headers.get('x-csrf-token'),
           hasCookieToken: !!request.cookies.get('next-auth.csrf-token')?.value
         })
-        
+
         logSecurity({
           type: SecurityEventType.CSRF_ATTACK,
           severity: 'HIGH',
@@ -82,20 +88,20 @@ export default withAuth(
             hasCookieToken: !!request.cookies.get('next-auth.csrf-token')?.value
           }
         })
-        
-        return new NextResponse('CSRF Token Invalid', { 
+
+        return new NextResponse('CSRF Token Invalid', {
           status: 403,
           headers: securityHeaders
         })
       }
     }
-    
+
     // 请求来源验证
     if (shouldValidateOrigin(request)) {
       if (!validateRequestOrigin(request)) {
         const origin = request.headers.get('origin')
         const referer = request.headers.get('referer')
-        
+
         logger.warn('[Middleware] Invalid request origin', {
           ip: clientIP,
           path: pathname,
@@ -104,7 +110,7 @@ export default withAuth(
           referer,
           userAgent
         })
-        
+
         logSecurity({
           type: SecurityEventType.SUSPICIOUS_REQUEST,
           severity: 'HIGH',
@@ -119,47 +125,57 @@ export default withAuth(
             expectedHost: request.headers.get('host')
           }
         })
-        
-        return new NextResponse('Invalid Request Origin', { 
+
+        return new NextResponse('Invalid Request Origin', {
           status: 403,
           headers: securityHeaders
         })
       }
     }
-    
+    */
+
     // 记录敏感路径访问
     if (pathname.startsWith('/api/auth/')) {
-      logger.info('[Middleware] Sensitive API access', {
-        ip: clientIP,
-        path: pathname,
-        method,
-        userAgent
-      })
+      // logger.info('[Middleware] Sensitive API access', {
+      //   ip: clientIP,
+      //   path: pathname,
+      //   method,
+      //   userAgent
+      // })
     }
-    
+
     return response
   },
   {
     callbacks: {
       authorized: ({ token, req }) => {
         const pathname = req.nextUrl.pathname
-        
-        // 允许访问登录页面和API认证路由
-        if (pathname.startsWith('/login') ||
-            pathname.startsWith('/api/auth')) {
+
+        // 允许访问的公共路径
+        const publicPaths = [
+          '/login',
+          '/api/auth',
+          '/api/config'
+        ]
+
+        // 检查是否为公共路径
+        const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
+
+        if (isPublicPath) {
           return true
         }
-        
+
         // 记录未授权访问尝试
         if (!token) {
           const clientIP = getClientIP(req)
-          
+
           logger.info('[Middleware] Unauthorized access attempt', {
             ip: clientIP,
             path: pathname,
-            userAgent: req.headers.get('user-agent')
+            userAgent: req.headers.get('user-agent'),
+            isPublicPath
           })
-          
+
           logSecurity({
             type: SecurityEventType.UNAUTHORIZED_ACCESS,
             severity: 'LOW',
@@ -168,11 +184,12 @@ export default withAuth(
             userAgent: req.headers.get('user-agent') || 'unknown',
             additionalData: {
               path: pathname,
-              hasToken: false
+              hasToken: false,
+              isPublicPath
             }
           })
         }
-        
+
         // 其他路径需要认证
         return !!token
       },
@@ -197,12 +214,12 @@ function getSecurityHeaders() {
 function shouldCheckCSRF(request: NextRequest): boolean {
   const { pathname } = request.nextUrl
   const method = request.method
-  
+
   // 只对POST、PUT、DELETE、PATCH请求进行CSRF检查
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
     return false
   }
-  
+
   return CSRF_PROTECTED_PATHS.some(path => pathname.startsWith(path))
 }
 
@@ -210,11 +227,11 @@ function shouldCheckCSRF(request: NextRequest): boolean {
 function validateCSRFToken(request: NextRequest): boolean {
   const csrfTokenFromHeader = request.headers.get('x-csrf-token')
   const csrfTokenFromCookie = request.cookies.get('next-auth.csrf-token')?.value
-  
+
   if (!csrfTokenFromHeader || !csrfTokenFromCookie) {
     return false
   }
-  
+
   // 简单的token比较，实际应用中应该使用更安全的验证方法
   return csrfTokenFromHeader === csrfTokenFromCookie
 }
@@ -223,10 +240,10 @@ function validateCSRFToken(request: NextRequest): boolean {
 function shouldValidateOrigin(request: NextRequest): boolean {
   const { pathname } = request.nextUrl
   const method = request.method
-  
+
   // 对敏感API路径进行来源验证
   const sensitiveAPIs = ['/api/cas/', '/api/auth/']
-  
+
   return method !== 'GET' && sensitiveAPIs.some(api => pathname.startsWith(api))
 }
 
@@ -235,21 +252,21 @@ function validateRequestOrigin(request: NextRequest): boolean {
   const origin = request.headers.get('origin')
   const referer = request.headers.get('referer')
   const host = request.headers.get('host')
-  
+
   if (!origin && !referer) {
     return false
   }
-  
+
   const allowedOrigins = [
     `https://${host}`,
     `http://${host}`, // 开发环境
     process.env.NEXTAUTH_URL
   ].filter(Boolean)
-  
+
   if (origin) {
     return allowedOrigins.includes(origin)
   }
-  
+
   if (referer) {
     try {
       const refererUrl = new URL(referer)
@@ -258,16 +275,16 @@ function validateRequestOrigin(request: NextRequest): boolean {
       return false
     }
   }
-  
+
   return false
 }
 
 // 获取客户端IP
 function getClientIP(request: NextRequest): string {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-         request.headers.get('x-real-ip') ||
-         request.ip ||
-         'unknown'
+    request.headers.get('x-real-ip') ||
+    request.ip ||
+    'unknown'
 }
 
 // 简单的速率限制（内存存储，生产环境应使用Redis等）
@@ -276,16 +293,16 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 function checkRateLimit(ip: string, limit: number = 100, windowMs: number = 15 * 60 * 1000): boolean {
   const now = Date.now()
   const record = rateLimitMap.get(ip)
-  
+
   if (!record || now > record.resetTime) {
     rateLimitMap.set(ip, { count: 1, resetTime: now + windowMs })
     return true
   }
-  
+
   if (record.count >= limit) {
     return false
   }
-  
+
   record.count++
   return true
 }
@@ -293,7 +310,7 @@ function checkRateLimit(ip: string, limit: number = 100, windowMs: number = 15 *
 
 
 export const config = {
-    matcher: [
-        '/((?!_next/static|_next/image|favicon.ico).*)',
-    ],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
 }

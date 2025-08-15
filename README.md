@@ -433,6 +433,16 @@ sudo systemctl status knowledge-base
    - 重启开发服务器
    - 检查变量名拼写
 
+## 下一步计划
+
+### 1. 使用next-runtime-env实现运行时环境变量
+
+### 2. 修复无限跳转和环境变量不一致问题[✔]
+
+### 3. 缩减镜像大小
+
+### 4. 发布Production版本，增加https支持
+
 ## 许可证
 
 本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。

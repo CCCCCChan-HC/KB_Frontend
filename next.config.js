@@ -6,20 +6,7 @@ const nextConfig = {
   experimental: {
     // appDir: true,
   },
-  // 配置以支持nginx代理
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Forwarded-Proto',
-            value: 'http',
-          },
-        ],
-      },
-    ]
-  },
+
   // fix all before production. Now it slow the develop speed.
   eslint: {
     // Warning: This allows production builds to successfully complete even if

@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { signIn, getCsrfToken, useSession } from 'next-auth/react'
 import { validateUsername, validateTimestamp, generateSecureState } from '@/utils/csrf'
+import { withPublicGuard } from '@/app/components/base/auth-guard'
 
-export default function LoginPage() {
+function LoginPage() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const { data: session, status } = useSession()
@@ -12,17 +13,13 @@ export default function LoginPage() {
     const [isProcessing, setIsProcessing] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    // 检查用户是否已登录，如果已登录则重定向到主页
+    // 移除原有的认证检查逻辑，由 AuthGuard 处理
+
+    // 处理已认证用户的自动跳转
     useEffect(() => {
-        console.log('[Login Page] Session status:', status, 'Session:', session)
-        console.log('[Login Page] NEXTAUTH_URL:', process.env.NEXT_PUBLIC_NEXTAUTH_URL)
-        console.log('[Login Page] Current URL:', window.location.href)
-        
+        console.log('Session status:', status);
         if (status === 'authenticated' && session) {
-            console.log('User already authenticated, redirecting to home page')
-            console.log('Session user:', session.user)
-            // 使用 window.location.href 强制重定向
-            window.location.href = '/'
+            router.push('/')
         }
     }, [status, session, router])
 
@@ -127,9 +124,8 @@ export default function LoginPage() {
                     })
                     
                     if (result?.ok) {
-                        // 登录成功，重定向到主页
-                        console.log('Login successful, redirecting to home page')
-                        router.push('/')
+                        // 登录成功，使用完整页面重定向确保session状态同步
+                        window.location.href = '/'
                     } else {
                         throw new Error(result?.error || '身份验证失败')
                     }
@@ -279,3 +275,6 @@ export default function LoginPage() {
         </div>
     )
 }
+
+// 使用公共页面守卫，自动处理已认证用户的重定向
+export default withPublicGuard(LoginPage)

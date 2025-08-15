@@ -50,3 +50,9 @@ yarn.lock
 # pmpm
 pnpm-lock.yaml
 NGINX_SETUP.md
+
+# Custom Ignores added by AI
+/certs/
+kb.tar
+.env.production.temp
+docker-compose-dev.yml

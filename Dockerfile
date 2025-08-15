@@ -3,16 +3,25 @@ FROM --platform=linux/amd64 node:18-bullseye-slim
 
 WORKDIR /app
 
-# 安装openssl用于生成自签证书，curl用于健康检查
-RUN apt-get update && apt-get install -y --no-install-recommends openssl curl && rm -rf /var/lib/apt/lists/*
+# 使用阿里云镜像源并安装openssl用于生成自签证书，curl用于健康检查
+RUN echo 'deb http://mirrors.aliyun.com/debian/ bullseye main non-free contrib' > /etc/apt/sources.list && \
+    echo 'deb http://mirrors.aliyun.com/debian-security bullseye-security main' >> /etc/apt/sources.list && \
+    echo 'deb http://mirrors.aliyun.com/debian/ bullseye-updates main non-free contrib' >> /etc/apt/sources.list && \
+    apt-get update && apt-get install -y --no-install-recommends openssl curl && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
 # 脚本加执行权限
 RUN chmod +x /app/scripts/generate-certs.sh
 
-RUN yarn install
-RUN yarn build
+# 使用 npm 而不是 yarn，并设置网络重试
+RUN npm config set registry https://registry.npmmirror.com/
+RUN npm config set fetch-timeout 300000
+RUN npm config set fetch-retry-mintimeout 20000
+RUN npm config set fetch-retry-maxtimeout 120000
+RUN npm install
+RUN npm run build
 
 EXPOSE 3000
 
