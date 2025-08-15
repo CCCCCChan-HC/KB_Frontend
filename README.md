@@ -435,13 +435,16 @@ sudo systemctl status knowledge-base
 
 ## 下一步计划
 
-### 1. 使用next-runtime-env实现运行时环境变量
+### 1. 使用next-runtime-env实现运行时环境变量[ing]
+[目前docker-compose的改动可实现环境变量的动态配置；npm run start下需要和重新npm run build]
 
 ### 2. 修复无限跳转和环境变量不一致问题[✔]
 
-### 3. 缩减镜像大小
+### 3. 缩减镜像大小[ing]
+[还可以进一步缩减]
 
 ### 4. 发布Production版本，增加https支持
+[可能需要先配置cas服务器的SSL才能测试是否这个步骤出了问题]
 
 ## 许可证
 

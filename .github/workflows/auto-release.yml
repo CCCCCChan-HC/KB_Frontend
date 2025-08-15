@@ -1,0 +1,133 @@
+name: Auto Release and Build
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'app/**'
+      - 'src/**'
+      - 'package.json'
+      - 'Dockerfile'
+      - 'next.config.js'
+      - 'server.js'
+  
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch  # v0.0.1 -> v0.0.2
+          - minor  # v0.0.1 -> v0.1.0
+          - major  # v0.0.1 -> v1.0.0
+
+jobs:
+  auto-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Get latest tag
+      id: get_tag
+      run: |
+        # 获取最新的标签，如果没有则从v0.0.0开始
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+        echo "Latest tag: $LATEST_TAG"
+    
+    - name: Calculate next version
+      id: next_version
+      run: |
+        LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+        VERSION_TYPE="${{ github.event.inputs.version_type || 'patch' }}"
+        
+        # 移除v前缀
+        VERSION=${LATEST_TAG#v}
+        
+        # 分割版本号
+        IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+        MAJOR=${VERSION_PARTS[0]:-0}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # 根据类型增加版本号
+        case $VERSION_TYPE in
+          "major")
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          "minor")
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          "patch")
+            PATCH=$((PATCH + 1))
+            ;;
+        esac
+        
+        NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "Next version: $NEW_VERSION"
+    
+    - name: Create and push tag
+      run: |
+        NEW_VERSION="${{ steps.next_version.outputs.new_version }}"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "$NEW_VERSION" -m "Auto release $NEW_VERSION"
+        git push origin "$NEW_VERSION"
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.next_version.outputs.new_version }}
+        release_name: Release ${{ steps.next_version.outputs.new_version }}
+        body: |
+          ## 🚀 自动发布 ${{ steps.next_version.outputs.new_version }}
+          
+          ### 📦 Docker镜像
+          - 镜像文件已自动构建并上传到此Release
+          - 下载后使用: `docker load -i kb-frontend-${{ steps.next_version.outputs.new_version }}.tar`
+          
+          ### 🔄 变更内容
+          此版本包含了最新的代码更新。
+          
+          ---
+          *此Release由GitHub Actions自动创建*
+        draft: false
+        prerelease: false
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        tags: kb-frontend:${{ steps.next_version.outputs.new_version }}
+        outputs: type=docker,dest=/tmp/kb-frontend.tar
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Upload Docker image to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: /tmp/kb-frontend.tar
+        asset_name: kb-frontend-${{ steps.next_version.outputs.new_version }}.tar
+        asset_content_type: application/x-tar
